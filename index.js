@@ -2,6 +2,9 @@ const { MongoClient, ServerApiVersion, ObjectId } = require('mongodb');
 const express = require("express")
 const cors = require("cors");
 const jwt = require("jsonwebtoken")
+const stripe = require("stripe")("sk_test_51M5wpFGyVf5jkl9QYJG9I2mG4F0lGJr6cuCubJ5gNCocwC3fZ9yKEJiBZgfvJepIiNEWDw9ielK846fY3KvYy3PQ00sEsQOZzV");
+
+
 require("dotenv").config()
 const app = express();
 const port = process.env.PORT || 5000;
@@ -44,6 +47,7 @@ const server = async() => {
         const bookingsCollection = client.db("doctors-portal").collection("bookings")
         const usersCollection = client.db("doctors-portal").collection("users")
         const doctorsCollection = client.db("doctors-portal").collection("doctors")
+        const paymentCollection = client.db("doctors-portal").collection("payments")
         
         // verifyAdmin run after verifyJWT
         const verifyAdmin =async (req, res, next) => {
@@ -159,6 +163,41 @@ const server = async() => {
             const booking = await bookingsCollection.findOne(query);
 
             res.send(booking)
+        })
+
+        app.post("/create-payment-intent", async(req, res) => {
+            const booking = req.body;
+            const price = booking.price;
+            const amount = price * 100;
+
+            const paymentIntent = await stripe.paymentIntents.create({
+                amount: amount,
+                currency: "usd",
+                automatic_payment_methods: {
+                    enabled: true,
+                },
+            });
+
+            res.send({
+                clientSecret: paymentIntent.client_secret,
+            });
+        });
+
+        app.post("/payments", async(req, res) => {
+            const payment = req.body;
+            const result = await paymentCollection.insertOne(payment);
+            const id = payment.booking_id;
+            const filter = {_id: ObjectId(id)};
+            const option = {upsert: true}
+            const updatedDoc = {
+                $set: {
+                    paid: true,
+                    transectionId: payment.transectionId
+                }
+            }
+            const updatedResult = await bookingsCollection.updateOne(filter, updatedDoc, option);
+            console.log(updatedResult);
+            res.send(result)
         })
 
         app.get("/jwt", async(req, res) => {
